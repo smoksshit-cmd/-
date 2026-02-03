@@ -40,14 +40,13 @@ const init = ()=>{
     
     // === DRAG AND DROP LOGIC ===
     let isDragging = false;
+    let hasMoved = false;
     let offsetX = 0;
     let offsetY = 0;
     let touchStartTime = 0;
-    let touchMoved = false;
     let touchStartX = 0;
     let touchStartY = 0;
     let justOpened = false;
-    let touchStartedOnTrigger = false;
 
     // Load position with validation
     const savedPos = localStorage.getItem('stwii--trigger-position');
@@ -60,8 +59,8 @@ const init = ()=>{
             const topVal = parseFloat(pos.y);
             
             if (!isNaN(leftVal) && !isNaN(topVal) && 
-                leftVal >= 0 && leftVal < window.innerWidth - 100 &&
-                topVal >= 0 && topVal < window.innerHeight - 100) {
+                leftVal >= 0 && leftVal < window.innerWidth - 50 &&
+                topVal >= 0 && topVal < window.innerHeight - 50) {
                 trigger.style.left = pos.x;
                 trigger.style.top = pos.y;
                 console.log('✅ [STWII] Позиция восстановлена');
@@ -75,55 +74,62 @@ const init = ()=>{
         }
     }
 
-    // Mouse events
-    trigger.addEventListener('mousedown', function(e) {
-        console.log('🟢 [STWII] MouseDown!');
-        isDragging = true;
-        const rect = trigger.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
-        trigger.style.opacity = '0.7';
-        trigger.style.cursor = 'grabbing';
-        e.preventDefault();
-    });
+    function savePosition() {
+        const pos = {
+            x: trigger.style.left,
+            y: trigger.style.top
+        };
+        localStorage.setItem('stwii--trigger-position', JSON.stringify(pos));
+        console.log('💾 [STWII] Позиция сохранена:', pos);
+    }
 
-    document.addEventListener('mousemove', function(e) {
-        if (!isDragging) return;
-        
-        let newX = e.clientX - offsetX;
-        let newY = e.clientY - offsetY;
+    function moveTrigger(clientX, clientY) {
+        let newX = clientX - offsetX;
+        let newY = clientY - offsetY;
         
         newX = Math.max(0, Math.min(newX, window.innerWidth - trigger.offsetWidth));
         newY = Math.max(0, Math.min(newY, window.innerHeight - trigger.offsetHeight));
         
         trigger.style.left = newX + 'px';
         trigger.style.top = newY + 'px';
-        
+    }
+
+    // Mouse events
+    trigger.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return; // Only left click
+        console.log('🖱️ [STWII] MouseDown');
+        isDragging = true;
+        hasMoved = false;
+        const rect = trigger.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        trigger.style.opacity = '0.7';
         e.preventDefault();
     });
 
-    document.addEventListener('mouseup', function() {
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        hasMoved = true;
+        moveTrigger(e.clientX, e.clientY);
+        e.preventDefault();
+    });
+
+    document.addEventListener('mouseup', function(e) {
         if (isDragging) {
-            console.log('💾 [STWII] MouseUp - сохраняем позицию');
             isDragging = false;
             trigger.style.opacity = '';
-            trigger.style.cursor = 'grab';
-            
-            const pos = {
-                x: trigger.style.left,
-                y: trigger.style.top
-            };
-            localStorage.setItem('stwii--trigger-position', JSON.stringify(pos));
-            console.log('✅ [STWII] Позиция сохранена:', pos);
+            if (hasMoved) {
+                savePosition();
+            }
         }
     });
 
     // Touch support
     trigger.addEventListener('touchstart', function(e) {
-        console.log('📱 [STWII] TouchStart!');
+        console.log('📱 [STWII] TouchStart');
         touchStartTime = Date.now();
-        touchMoved = false;
-        touchStartedOnTrigger = true;
+        hasMoved = false;
+        isDragging = true;
         
         const rect = trigger.getBoundingClientRect();
         const touch = e.touches[0];
@@ -136,79 +142,41 @@ const init = ()=>{
     }, {passive: true});
 
     document.addEventListener('touchmove', function(e) {
-        if (!touchStartedOnTrigger) return;
-        if (e.touches.length === 0) return;
+        if (!isDragging) return;
         
         const touch = e.touches[0];
         const deltaX = Math.abs(touch.clientX - touchStartX);
         const deltaY = Math.abs(touch.clientY - touchStartY);
         
         if (deltaX > 10 || deltaY > 10) {
-            touchMoved = true;
-            isDragging = true;
+            hasMoved = true;
             trigger.style.opacity = '0.7';
+            moveTrigger(touch.clientX, touch.clientY);
             e.preventDefault();
-            
-            let newX = touch.clientX - offsetX;
-            let newY = touch.clientY - offsetY;
-            
-            newX = Math.max(0, Math.min(newX, window.innerWidth - trigger.offsetWidth));
-            newY = Math.max(0, Math.min(newY, window.innerHeight - trigger.offsetHeight));
-            
-            trigger.style.left = newX + 'px';
-            trigger.style.top = newY + 'px';
         }
     }, { passive: false });
 
     trigger.addEventListener('touchend', function(e) {
         const touchDuration = Date.now() - touchStartTime;
         
-        console.log('📱 [STWII] Trigger TouchEnd - moved:', touchMoved, 'duration:', touchDuration);
+        console.log('📱 [STWII] TouchEnd - moved:', hasMoved, 'duration:', touchDuration);
         
-        if (isDragging && touchMoved) {
-            isDragging = false;
-            trigger.style.opacity = '';
-            
-            const pos = {
-                x: trigger.style.left,
-                y: trigger.style.top
-            };
-            localStorage.setItem('stwii--trigger-position', JSON.stringify(pos));
-            console.log('✅ [STWII] Позиция сохранена (touch drag)');
-            
+        isDragging = false;
+        trigger.style.opacity = '';
+        
+        if (hasMoved) {
+            savePosition();
             e.preventDefault();
             e.stopPropagation();
-        } else if (!touchMoved && touchDuration < 300) {
-            console.log('👆 [STWII] Быстрый тап - эмулируем клик');
-            
-            justOpened = !panel.classList.contains('stwii--isActive');
-            
-            const clickEvent = new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                view: window
-            });
-            trigger.dispatchEvent(clickEvent);
-            
-            if (justOpened) {
-                setTimeout(() => {
-                    justOpened = false;
-                    console.log('⏰ [STWII] justOpened сброшен');
-                }, 500);
-            }
-            
+        } else if (touchDuration < 300) {
+            // Short tap - toggle panel
+            console.log('👆 [STWII] Короткий тап - переключаем панель');
+            togglePanel();
             e.preventDefault();
             e.stopPropagation();
         }
         
-        isDragging = false;
-        touchMoved = false;
-        touchStartedOnTrigger = false;
-        touchStartX = 0;
-        touchStartY = 0;
-        offsetX = 0;
-        offsetY = 0;
-        trigger.style.opacity = '';
+        hasMoved = false;
     }, {capture: true});
 
     document.body.append(trigger);
@@ -224,102 +192,130 @@ const init = ()=>{
     
     function positionPanel(panelElement) {
         const rect = trigger.getBoundingClientRect();
-        const panelWidth = panelElement.offsetWidth || 250;
+        const panelWidth = Math.min(350, window.innerWidth - 20);
+        
+        // Temporarily show to measure height
+        const wasHidden = !panelElement.classList.contains('stwii--isActive');
+        if (wasHidden) {
+            panelElement.style.visibility = 'hidden';
+            panelElement.style.display = 'flex';
+        }
+        
         const panelHeight = panelElement.offsetHeight;
         
-        let left = rect.right + 10;
-        let top = rect.top;
+        if (wasHidden) {
+            panelElement.style.display = '';
+            panelElement.style.visibility = '';
+        }
         
-        if (left + panelWidth > window.innerWidth) {
+        let left, top;
+        
+        // Try to position to the right of trigger
+        if (rect.right + 10 + panelWidth <= window.innerWidth) {
+            left = rect.right + 10;
+        } 
+        // Try to position to the left
+        else if (rect.left - 10 - panelWidth >= 0) {
             left = rect.left - panelWidth - 10;
         }
-        
-        if (top + panelHeight > window.innerHeight) {
-            top = window.innerHeight - panelHeight - 10;
+        // Center horizontally if no space on sides
+        else {
+            left = Math.max(10, (window.innerWidth - panelWidth) / 2);
         }
         
-        if (top < 0) {
+        // Vertical positioning
+        top = rect.top;
+        
+        // Adjust if goes below screen
+        if (top + panelHeight > window.innerHeight - 10) {
+            top = Math.max(10, window.innerHeight - panelHeight - 10);
+        }
+        
+        // Ensure not above screen
+        if (top < 10) {
             top = 10;
         }
         
         panelElement.style.left = left + 'px';
         panelElement.style.top = top + 'px';
         
-        console.log('📍 [STWII] Панель позиционирована:', {left, top});
+        console.log('📍 [STWII] Панель позиционирована:', {left, top, panelWidth, panelHeight});
+    }
+
+    function togglePanel() {
+        configPanel.classList.remove('stwii--isActive');
+        const isOpening = !panel.classList.contains('stwii--isActive');
+        panel.classList.toggle('stwii--isActive');
+        
+        if (isOpening) {
+            justOpened = true;
+            positionPanel(panel);
+            setTimeout(() => {
+                justOpened = false;
+            }, 300);
+        }
+        
+        console.log('📊 [STWII] Панель:', panel.classList.contains('stwii--isActive') ? 'открыта' : 'закрыта');
+    }
+
+    function toggleConfigPanel() {
+        panel.classList.remove('stwii--isActive');
+        const isOpening = !configPanel.classList.contains('stwii--isActive');
+        configPanel.classList.toggle('stwii--isActive');
+        
+        if (isOpening) {
+            justOpened = true;
+            positionPanel(configPanel);
+            setTimeout(() => {
+                justOpened = false;
+            }, 300);
+        }
     }
 
     trigger.addEventListener('click', (e)=>{
-        console.log('🖱️ [STWII] Click событие!');
-        e.stopPropagation();
-        
-        configPanel.classList.remove('stwii--isActive');
-        panel.classList.toggle('stwii--isActive');
-        
-        if (panel.classList.contains('stwii--isActive')) {
-            setTimeout(() => positionPanel(panel), 10);
+        console.log('🖱️ [STWII] Click');
+        if (hasMoved) {
+            hasMoved = false;
+            return;
         }
-        
-        console.log('📊 [STWII] Панель теперь:', panel.classList.contains('stwii--isActive') ? 'открыта' : 'закрыта');
+        e.stopPropagation();
+        togglePanel();
     });
     
     trigger.addEventListener('contextmenu', (evt)=>{
         evt.preventDefault();
         evt.stopPropagation();
-        
-        panel.classList.remove('stwii--isActive');
-        
-        configPanel.classList.toggle('stwii--isActive');
-        
-        if (configPanel.classList.contains('stwii--isActive')) {
-            setTimeout(() => positionPanel(configPanel), 10);
-        }
+        toggleConfigPanel();
     });
 
-    document.addEventListener('click', (e)=>{
-        if (justOpened) {
-            console.log('⏳ [STWII] Игнорируем document click - только что открыли');
-            return;
+    function closePanels() {
+        if (panel.classList.contains('stwii--isActive') || 
+            configPanel.classList.contains('stwii--isActive')) {
+            console.log('❌ [STWII] Закрываем панели');
+            panel.classList.remove('stwii--isActive');
+            configPanel.classList.remove('stwii--isActive');
         }
+    }
+
+    document.addEventListener('click', (e)=>{
+        if (justOpened) return;
         
         if (!panel.contains(e.target) && 
             !configPanel.contains(e.target) && 
             !trigger.contains(e.target)) {
-            
-            if (panel.classList.contains('stwii--isActive') || 
-                configPanel.classList.contains('stwii--isActive')) {
-                console.log('❌ [STWII] Клик снаружи - закрываем панели');
-                panel.classList.remove('stwii--isActive');
-                configPanel.classList.remove('stwii--isActive');
-            }
+            closePanels();
         }
     });
 
-    document.addEventListener('touchend', (e)=>{
-        if (justOpened) {
-            console.log('⏳ [STWII] Игнорируем document touchend - только что открыли');
-            return;
-        }
+    document.addEventListener('touchstart', (e)=>{
+        if (justOpened) return;
         
-        if (touchMoved) {
-            console.log('⏳ [STWII] Игнорируем document touchend - было движение');
-            return;
+        if (!panel.contains(e.target) && 
+            !configPanel.contains(e.target) && 
+            !trigger.contains(e.target)) {
+            closePanels();
         }
-        
-        const touch = e.changedTouches[0];
-        const target = document.elementFromPoint(touch.clientX, touch.clientY);
-        
-        if (!panel.contains(target) && 
-            !configPanel.contains(target) && 
-            !trigger.contains(target)) {
-            
-            if (panel.classList.contains('stwii--isActive') || 
-                configPanel.classList.contains('stwii--isActive')) {
-                console.log('❌ [STWII] Touch снаружи - закрываем панели');
-                panel.classList.remove('stwii--isActive');
-                configPanel.classList.remove('stwii--isActive');
-            }
-        }
-    });
+    }, {passive: true});
 
     window.addEventListener('resize', () => {
         if (panel.classList.contains('stwii--isActive')) {
@@ -584,6 +580,11 @@ const init = ()=>{
                 e.append(sticky);
                 panel.append(e);
             }
+        }
+        
+        // Reposition panel after content update
+        if (panel.classList.contains('stwii--isActive')) {
+            positionPanel(panel);
         }
     };
 
